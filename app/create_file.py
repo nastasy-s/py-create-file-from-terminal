@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+CLI tool to create directories/files and append timestamped, numbered content.
+
+Flags:
+  -d <dir parts...>   Treat subsequent args as nested directory names.
+  -f <filename>       Prompt for lines until you enter exactly 'stop'.
+
+Combinations:
+  -d ... -f file.txt  Create dirs and write file inside them.
+"""
+
 import os
 import sys
 from datetime import datetime
@@ -75,14 +86,17 @@ def ensure_dirs(dir_parts: List[str]) -> str:
 
 
 def collect_lines() -> List[str]:
-    """Read lines from stdin until the user types 'stop' (case-insensitive)."""
+    """Read lines until the user enters exactly 'stop' (case/space sensitive).
+    The terminating line 'stop' is not included in the result.
+    """
     lines: List[str] = []
     while True:
         try:
             line = input("Enter content line: ")
         except EOFError:
             break
-        if line.strip().lower() == "stop":
+        # exact match only: no strip(), no lower()
+        if line == "stop":
             break
         lines.append(line)
     return lines

@@ -1,13 +1,20 @@
-# tests/test_main.py
 import os
 import re
-import io
-import builtins
-import types
+from unittest.mock import patch
 
 import pytest
 
-from app.create_file import parse_args, ensure_dirs, append_block
+from app.create_file import (
+    parse_args,
+    ensure_dirs,
+    collect_lines,
+    append_block,
+)
+
+
+def _mock_inputs(seq):
+    it = iter(seq)
+    return lambda _: next(it)
 
 
 def test_parse_args_dirs_only():
@@ -30,57 +37,62 @@ def test_parse_args_dirs_and_file():
 
 def test_parse_args_errors():
     with pytest.raises(SystemExit):
-        parse_args([])  # no flags
+        parse_args([])
+
     with pytest.raises(SystemExit):
-        parse_args(["-d"])  # no dir after -d
+        parse_args(["-d"])
+
     with pytest.raises(SystemExit):
-        parse_args(["-f"])  # no file after -f
+        parse_args(["-f"])
+
     with pytest.raises(SystemExit):
-        parse_args(["-f", "a.txt", "-f", "b.txt"])  # duplicate -f
+        parse_args(["-f", "a.txt", "-f", "b.txt"])
+
     with pytest.raises(SystemExit):
-        parse_args(["--weird"])  # unknown flag
+        parse_args(["--oops"])
 
 
 def test_ensure_dirs_creates_nested(tmp_path, monkeypatch):
-    # work from tmp dir to avoid touching real CWD
     monkeypatch.chdir(tmp_path)
     base = ensure_dirs(["dir1", "dir2"])
     assert os.path.isdir(base)
     assert base.endswith(os.path.join("dir1", "dir2"))
 
 
+def test_collect_lines_exact_stop_only():
+    inputs = ["Line1", "Stop", "STOP", " stop ", "Line2", "stop"]
+    with patch("builtins.input", side_effect=_mock_inputs(inputs)):
+        lines = collect_lines()
+    # Only exact "stop" terminates; variants are kept as content
+    assert lines == ["Line1", "Stop", "STOP", " stop ", "Line2"]
+
+
 def test_append_block_creates_and_appends(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     file_path = tmp_path / "file.txt"
 
-    # 1st write
-    append_block(str(file_path), ["Line1 content", "Line2 content", "Line3 content"])
+    # First write
+    append_block(str(file_path), ["A", "B", "C"])
     text1 = file_path.read_text(encoding="utf-8")
-    # first line is timestamp
     first_line = text1.splitlines()[0]
     assert re.match(r"\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}$", first_line)
-    # numbered lines
-    assert "1 Line1 content" in text1
-    assert "2 Line2 content" in text1
-    assert "3 Line3 content" in text1
+    assert "1 A" in text1 and "2 B" in text1 and "3 C" in text1
 
-    # 2nd write (append)
-    append_block(str(file_path), ["Another line1", "Another line2"])
+    # Second write (appends with blank line)
+    append_block(str(file_path), ["X", "Y"])
     text2 = file_path.read_text(encoding="utf-8")
-    # There should be a blank line separating two blocks
     assert "\n\n" in text2
     blocks = text2.strip().split("\n\n")
     assert len(blocks) == 2
 
-    # In the second block, numbering must restart from 1
-    second_block = blocks[1].splitlines()
-    assert re.match(r"\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}$", second_block[0])
-    assert second_block[1] == "1 Another line1"
-    assert second_block[2] == "2 Another line2"
+    second = blocks[1].splitlines()
+    assert re.match(r"\d{4}-\d{2}-\d2\s\d{2}:\d{2}:\d{2}$", second[0]) or \
+           re.match(r"\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}$", second[0])
+    assert second[1] == "1 X"
+    assert second[2] == "2 Y"
 
 
-def test_append_block_empty_lines_creates_file_only(tmp_path, monkeypatch):
-    """No lines => file should be created/touched but remain empty."""
+def test_append_block_empty_input_creates_empty_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     p = tmp_path / "empty.txt"
     append_block(str(p), [])
